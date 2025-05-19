@@ -6,6 +6,30 @@
     const PROCESS_INTERVAL = 1000; // 최소 처리 간격 (1초)
     const DEBOUNCE_DELAY = 500; // 디바운스 지연 시간 (0.5초)
 
+    // DOM이 준비되었는지 확인하는 함수
+    function waitForElement(iframeDoc, selector, timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            const startTime = Date.now();
+            
+            const checkElement = () => {
+                const element = iframeDoc.querySelector(selector);
+                if (element) {
+                    resolve(element);
+                    return;
+                }
+                
+                if (Date.now() - startTime >= timeout) {
+                    reject(new Error(`Element ${selector} not found after ${timeout}ms`));
+                    return;
+                }
+                
+                setTimeout(checkElement, 100);
+            };
+            
+            checkElement();
+        });
+    }
+
     // 대기 버튼 HTML 생성
     const waitingButtonsHTML = `
         <ul style="margin: 0; padding: 0;">
@@ -78,57 +102,41 @@
             }
             button.dataset.waitingProcessed = 'true';
 
-            button.addEventListener('click', (e) => {
+            button.addEventListener('click', async (e) => {
                 e.preventDefault(); // 기본 동작 방지
                 const btnText = button.innerText.trim(); // 예: 조재희W
                 console.log(`✅ 대기 버튼 클릭: ${btnText}`);
 
-                // textarea 찾기
-                const textarea = iframeDoc.getElementById('strMemo');
-                if (textarea) {
-                    // 기존 텍스트를 유지하면서 새로운 메모 형식 추가
-                    textarea.value = textarea.value + `\n\n1.\n2.${btnText}\n3.\n4.`;
-                    console.log('✅ 메모가 업데이트되었습니다.');
-                } else {
-                    console.error('❌ textarea#strMemo를 찾을 수 없습니다.');
-                }
-
-                // 1. linkSelectCateg_Change td 찾기
-                console.log('🔍 linkSelectCateg_Change td 찾기 시작...');
-                const categoryTd = iframeDoc.querySelector('td.tal.tind[onclick="linkSelectCateg_Change(this);"]');
-                
-                if (categoryTd) {
+                try {
+                    // 1. linkSelectCateg_Change td 찾기
+                    const categoryTd = await waitForElement(iframeDoc, 'td.tal.tind[onclick="linkSelectCateg_Change(this);"]');
                     console.log('✅ linkSelectCateg_Change td 발견');
                     categoryTd.click();
 
                     // 2. 시술전 td 찾기
-                    setTimeout(() => {
-                        console.log('🔍 시술전 td 찾기 시작...');
-                        const targetTd = iframeDoc.querySelector('td[onclick*="categChange"][onclick*="시술전"]');
-                        
-                        if (targetTd) {
-                            console.log('✅ 시술전 td 발견');
-                            targetTd.click();
+                    const targetTd = await waitForElement(iframeDoc, 'td[onclick*="categChange"][onclick*="시술전"]');
+                    console.log('✅ 시술전 td 발견');
+                    targetTd.click();
 
-                            // 3. 닫기 버튼 찾기
-                            setTimeout(() => {
-                                console.log('🔍 닫기 버튼 찾기 시작...');
-                                const closeSpan = iframeDoc.querySelector('span[onclick*="parents(\'div:first\').hide()"]');
-                                
-                                if (closeSpan) {
-                                    console.log('✅ 닫기 버튼 발견');
-                                    closeSpan.click();
-                                    console.log('✅ 모든 작업이 완료되었습니다.');
-                                } else {
-                                    console.error('❌ 닫기 버튼을 찾을 수 없습니다.');
-                                }
-                            }, 100);
-                        } else {
-                            console.error('❌ 시술전 td를 찾을 수 없습니다.');
-                        }
-                    }, 500);
-                } else {
-                    console.error('❌ linkSelectCateg_Change td를 찾을 수 없습니다.');
+                    // 3. 시술중 td 찾기
+                    const m2Td = await waitForElement(iframeDoc, 'td.m2[id*="시술중"]');
+                    console.log('✅ 시술중 td 발견');
+                    m2Td.click();
+
+                    // 4. textarea 찾기
+                    const textarea = iframeDoc.getElementById('strMemo');
+                    if (textarea) {
+                        // 기존 텍스트를 유지하면서 새로운 메모 형식 추가
+                        textarea.value = textarea.value + `\n\n1.\n2.${btnText}\n3.\n4.`;
+                        console.log('✅ 메모가 업데이트되었습니다.');
+                    } else {
+                        console.error('❌ textarea#strMemo를 찾을 수 없습니다.');
+                    }
+
+                    console.log('✅ 모든 작업이 완료되었습니다.');
+
+                } catch (err) {
+                    console.error('❌ 작업 처리 중 오류:', err);
                 }
             });
 
