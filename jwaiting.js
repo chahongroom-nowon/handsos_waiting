@@ -1,62 +1,89 @@
-(() => {
-    const frameId = 'mainFrame';
-    let observer = null;
-    let mutationTimeout = null;
-    let lastProcessTime = 0;
-    const PROCESS_INTERVAL = 1000; // 최소 처리 간격 (1초)
-    const DEBOUNCE_DELAY = 500; // 디바운스 지연 시간 (0.5초)
+/**
+ * [사용자 참고]
+ * - 이 스크립트는 handsos 예약표(mainFrame) iframe 내부에 "대기" 버튼을 자동으로 추가합니다.
+ * - 버튼을 누르면 예약 메모에 담당자명(예: "재희W")이 자동으로 입력됩니다.
+ * - 버튼, 담당자명, 입력 포맷 등은 아래 코드에서 쉽게 수정할 수 있습니다.
+ * - js를 잘 모르는 분도, 아래 주석과 변수만 수정하면 원하는 동작을 쉽게 바꿀 수 있습니다.
+ */
 
-    // DOM이 준비되었는지 확인하는 함수
+(() => {
+    // [1] handsos 예약표 iframe의 id
+    const FRAME_ID = 'mainFrame';
+
+    // [2] MutationObserver 및 디바운싱 관련 변수
+    let observer = null;           // MutationObserver 인스턴스
+    let mutationTimeout = null;    // 디바운싱 타이머
+    let lastProcessTime = 0;       // 마지막 처리 시각
+    const PROCESS_INTERVAL = 1000; // 최소 처리 간격(ms)
+    const DEBOUNCE_DELAY = 500;    // 디바운스 지연(ms)
+
+    /**
+     * [3] 특정 요소가 DOM에 나타날 때까지 대기 (비동기)
+     * @param {Document} iframeDoc - iframe 내부 document 객체
+     * @param {string} selector - 찾을 요소의 CSS 선택자
+     * @param {number} timeout - 최대 대기 시간(ms)
+     * @returns {Promise<Element>}
+     */
     function waitForElement(iframeDoc, selector, timeout = 5000) {
         return new Promise((resolve, reject) => {
-            const startTime = Date.now();
-            
-            const checkElement = () => {
-                const element = iframeDoc.querySelector(selector);
-                if (element) {
-                    resolve(element);
+            const start = Date.now();
+            function check() {
+                const el = iframeDoc.querySelector(selector);
+                if (el) {
+                    resolve(el);
                     return;
                 }
-                
-                if (Date.now() - startTime >= timeout) {
-                    reject(new Error(`Element ${selector} not found after ${timeout}ms`));
+                if (Date.now() - start >= timeout) {
+                    reject(new Error(`요소(${selector})를 ${timeout}ms 내에 찾지 못했습니다.`));
                     return;
                 }
-                
-                setTimeout(checkElement, 100);
-            };
-            
-            checkElement();
+                setTimeout(check, 100);
+            }
+            check();
         });
     }
 
-    // 대기 버튼 HTML 생성
+    /**
+     * [4] 대기 버튼 HTML 템플릿
+     * - 아래 배열에 담당자명을 추가/삭제하면 버튼이 자동으로 바뀝니다.
+     */
+    const waitingNames = [
+        "재희W", "광숙W", "지후W", 
+        "시은W", "윤진W", "정현W",
+        "희선W", "희진W", "소이W", 
+        "소연W", "재열W"
+    ];
     const waitingButtonsHTML = `
-        <ul style="margin: 0; padding: 0;">
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">재희W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">광숙W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">지후W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">현진W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">예나W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">시은W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">윤진W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">정현W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">희선W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">희진W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">소이W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">소연W</span></li>
-            <li style="display:inline-block; margin: 2px;"><span class="nBtn line jwaiting" style="cursor: pointer; display: inline-block; padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px;">재열W</span></li>
-        </ul>
+         <ul style="margin:0; padding:0;">
+        ${waitingNames.reduce((html, name, idx) => {
+            if (idx % 3 === 0) {
+                html += '<li style="display:block; margin:4px 0;">';
+            }
+            html += `
+                <span class="nBtn line jwaiting"
+                    style="cursor:pointer; display:inline-block; padding:2px 8px; border:1px solid #ccc; border-radius:3px; margin-right:4px;">
+                    ${name}
+                </span>
+            `;
+            if (idx % 3 === 2 || idx === waitingNames.length - 1) {
+                html += '</li>';
+            }
+            return html;
+        }, '')}
+    </ul>
     `;
 
-    // iframe 내부 문서를 처리하는 함수
+    /**
+     * [5] iframe 내부에 대기 버튼을 추가하고 이벤트를 바인딩
+     * @param {Document} iframeDoc
+     */
     function processIframe(iframeDoc) {
         if (!iframeDoc) {
             console.warn('❌ iframe 내부 문서 접근 불가');
             return;
         }
 
-        // cashReceiptLayer div 찾기
+        // cashReceiptLayer div 찾기 (버튼을 붙일 기준 위치)
         const cashReceiptLayer = iframeDoc.querySelector('div#cashReceiptLayer');
         if (!cashReceiptLayer) {
             console.log('❌ cashReceiptLayer를 찾을 수 없습니다.');
@@ -70,88 +97,83 @@
             return;
         }
 
-        // 부모 요소의 자식들 중에서 table 찾기
-        const targetTable = Array.from(parentElement.children).find(element => 
-            element.tagName === 'TABLE' && element !== cashReceiptLayer
+        // cashReceiptLayer의 형제 테이블 찾기 (버튼을 붙일 곳)
+        const targetTable = Array.from(parentElement.children).find(
+            el => el.tagName === 'TABLE' && el !== cashReceiptLayer
         );
-
         if (!targetTable) {
             console.log('❌ cashReceiptLayer의 형제 테이블을 찾을 수 없습니다.');
             return;
         }
 
-        console.log('✅ 지정된 위치의 테이블을 찾았습니다.');
-
-        // 이미 버튼이 추가되었는지 확인
+        // 이미 버튼이 추가되었는지 확인 (중복 방지)
         if (targetTable.dataset.buttonsAdded === 'true') {
-            console.log('ℹ️ 이미 버튼이 추가되어 있습니다.');
+            // 이미 추가된 경우는 무시
             return;
         }
 
-        // 버튼 추가
+        // 버튼 HTML 추가
         targetTable.insertAdjacentHTML('beforeend', waitingButtonsHTML);
         targetTable.dataset.buttonsAdded = 'true';
-        console.log('✅ 대기 버튼들이 추가되었습니다.');
 
         // 버튼 이벤트 리스너 등록
         const buttons = iframeDoc.querySelectorAll('.nBtn.line.jwaiting');
         buttons.forEach(button => {
-            // 이미 처리된 버튼인지 확인
-            if (button.dataset.waitingProcessed === 'true') {
-                return;
-            }
+            if (button.dataset.waitingProcessed === 'true') return;
             button.dataset.waitingProcessed = 'true';
 
             button.addEventListener('click', async (e) => {
-                e.preventDefault(); // 기본 동작 방지
-                const btnText = button.innerText.trim(); // 예: 조재희W
-                console.log(`✅ 대기 버튼 클릭: ${btnText}`);
+                e.preventDefault();
+                const btnText = button.innerText.trim();
 
                 try {
-                    // 1. linkSelectCateg_Change td 찾기
-                    const categoryTd = await waitForElement(iframeDoc, 'td.tal.tind[onclick="linkSelectCateg_Change(this);"]');
-                    console.log('✅ linkSelectCateg_Change td 발견');
+                    // 1. 카테고리 선택 td 클릭
+                    const categoryTd = await waitForElement(
+                        iframeDoc,
+                        'td.tal.tind[onclick="linkSelectCateg_Change(this);"]'
+                    );
                     categoryTd.click();
 
-                    // 2. 시술전 td 찾기
-                    const targetTd = await waitForElement(iframeDoc, 'td[onclick*="categChange"][onclick*="시술전"]');
-                    console.log('✅ 시술전 td 발견');
+                    // 2. "시술전" td 클릭
+                    const targetTd = await waitForElement(
+                        iframeDoc,
+                        'td[onclick*="categChange"][onclick*="시술전"]'
+                    );
                     targetTd.click();
 
-                    // 3. 시술중 td 찾기
-                    const m2Td = await waitForElement(iframeDoc, 'td.m2[id*="시술중"]');
-                    console.log('✅ 시술중 td 발견');
+                    // 3. "시술중" td 클릭
+                    const m2Td = await waitForElement(
+                        iframeDoc,
+                        'td.m2[id*="시술중"]'
+                    );
                     m2Td.click();
 
-                    // 4. textarea 찾기
+                    // 4. 메모 textarea에 텍스트 추가
                     const textarea = iframeDoc.getElementById('strMemo');
                     if (textarea) {
-                        // 기존 텍스트를 유지하면서 새로운 메모 형식 추가
+                        // 아래 포맷을 원하는 대로 수정 가능
                         textarea.value = textarea.value + `\n\n1.\n2.${btnText}\n3.\n4.`;
-                        console.log('✅ 메모가 업데이트되었습니다.');
                     } else {
                         console.error('❌ textarea#strMemo를 찾을 수 없습니다.');
                     }
-
-                    console.log('✅ 모든 작업이 완료되었습니다.');
-
                 } catch (err) {
                     console.error('❌ 작업 처리 중 오류:', err);
                 }
             });
-
-            console.log(`✅ 대기 버튼 이벤트 리스너가 등록되었습니다: ${button.innerText.trim()}`);
         });
     }
 
-    // 변경 감지 처리 (디바운싱 적용)
+    /**
+     * [6] DOM 변경 감지 시 처리 (디바운싱 적용)
+     * - 여러 번 변경이 일어나도 일정 시간 후 한 번만 처리
+     */
     function processMutations() {
         if (mutationTimeout) clearTimeout(mutationTimeout);
         mutationTimeout = setTimeout(() => {
             const now = Date.now();
             if (now - lastProcessTime >= PROCESS_INTERVAL) {
                 try {
-                    const iframe = document.getElementById(frameId);
+                    const iframe = document.getElementById(FRAME_ID);
                     if (iframe && (iframe.contentDocument || iframe.contentWindow.document)) {
                         processIframe(iframe.contentDocument || iframe.contentWindow.document);
                         lastProcessTime = now;
@@ -163,9 +185,12 @@
         }, DEBOUNCE_DELAY);
     }
 
-    // iframe 문서 감시 초기화
+    /**
+     * [7] iframe 내부 문서에 MutationObserver 등록
+     * - DOM이 변경될 때마다 processMutations 실행
+     */
     function initializeObserver() {
-        const frame = document.getElementById(frameId);
+        const frame = document.getElementById(FRAME_ID);
         if (frame && frame.contentDocument && frame.contentDocument.body) {
             if (observer) observer.disconnect();
 
@@ -177,18 +202,18 @@
                 attributes: true
             });
 
-            console.log('✅ Mutation Observer가 (재)시작되었습니다.');
             processIframe(frame.contentDocument);
         } else {
             console.warn('⚠️ iframe 내부 문서 또는 body에 접근할 수 없습니다.');
         }
     }
 
-    // iframe 로드 완료 시 observer 초기화
-    const frameElement = document.getElementById(frameId);
+    // [8] iframe 로드 시 MutationObserver 초기화
+    const frameElement = document.getElementById(FRAME_ID);
     if (frameElement) {
         frameElement.addEventListener('load', initializeObserver);
 
+        // 이미 로드된 경우 즉시 처리
         if (frameElement.contentDocument?.readyState === 'complete') {
             initializeObserver();
         }
@@ -196,12 +221,12 @@
         console.error('❌ mainFrame 요소를 찾을 수 없습니다.');
     }
 
-    // window 로드 시 초기화 백업
+    // [9] window 로드 시 백업 초기화
     if (document.readyState === 'complete') {
         initializeObserver();
     } else {
         window.addEventListener('load', () => {
-            const frame = document.getElementById(frameId);
+            const frame = document.getElementById(FRAME_ID);
             if (frame?.contentDocument?.readyState === 'complete') {
                 initializeObserver();
             } else {
@@ -210,4 +235,13 @@
         });
     }
 })();
+
+/*
+─────────────────────────────────────────────
+[사용자 참고]
+- waitingNames 배열에 담당자명을 추가/삭제하면 버튼이 자동으로 바뀝니다.
+- 버튼을 눌렀을 때 입력되는 메모 포맷은 processIframe 함수 내에서 수정할 수 있습니다.
+- 코드 내 주석을 참고해 원하는 동작을 쉽게 바꿀 수 있습니다.
+─────────────────────────────────────────────
+*/
 
